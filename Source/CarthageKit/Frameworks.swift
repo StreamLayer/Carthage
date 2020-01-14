@@ -259,6 +259,7 @@ final class Frameworks {
                 let bundlesInURL = url.pathComponents.filter { pathComponent in
                     return (pathComponent as NSString).pathExtension == bundleExtension
                 }
+
                 return bundlesInURL.count == 1 && url.pathExtension == bundleExtension
             }
     }
@@ -537,7 +538,8 @@ final class Frameworks {
     static func undefinedSymbols(frameworkURL: URL) -> Result<[String: Set<String>], CarthageError> {
         return CarthageResult.catching {
             let executableURL = try binaryURL(frameworkURL).get()
-            
+            let expectedModuleName = executableURL.lastPathComponent
+
             //_$s11
             let output = try Task("/usr/bin/xcrun", arguments: ["nm", "-u", executableURL.path]).getStdOutString().flatMapError { _ -> Result<String, CarthageError> in
                 return .success("")
@@ -548,7 +550,11 @@ final class Frameworks {
                 scanner.charactersToBeSkipped = CharacterSet()
                 var count = 0
                 if scanner.scanString("_$s", into: nil), scanner.scanInt(&count), let moduleName = scanner.scan(count: count) {
+                  let demangledSymbol = try? Task("/usr/bin/xcrun", arguments: ["swift", "demangle", line]).getStdOutString().flatMapError { _ -> Result<String, CarthageError> in return .success("") }.get()
+
+                  if demangledSymbol?.contains("(extension in \(expectedModuleName))") != true {
                     map[moduleName, default: Set<String>()].insert(line)
+                  }
                 }
                 
             }
@@ -556,7 +562,7 @@ final class Frameworks {
         }
     }
     
-    // Returns a map of undefined (external) symbols where the key is the name of the dependency and the value is the symbol.
+    // Returns a map of defined symbols where the key is the name of the dependency and the value is the symbol.
     static func definedSymbols(frameworkURL: URL) -> Result<[String: Set<String>], CarthageError> {
         return CarthageResult.catching {
             let executableURL = try binaryURL(frameworkURL).get()

@@ -556,7 +556,7 @@ extension VersionFile {
                                     let diffSet = symbols.subtracting(eSymbols)
                                     if !diffSet.isEmpty {
                                         #if DEBUG
-                                        print("Found the following undefined symbols:")
+                                        print("[\(frameworkURL)] Found the following undefined symbols for \(name) in \(platform):")
                                         print(diffSet.joined(separator: "\n"))
                                         #endif
                                         return SignalProducer(value: .symbolsNotMatching(symbols: diffSet))

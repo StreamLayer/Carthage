@@ -35,16 +35,16 @@ extension DependencyRetrieverProtocol {
     public func dependencies(for dependency: Dependency, version: PinnedVersion) -> SignalProducer<(Dependency, VersionSpecifier), CarthageError> {
         return self.dependencies(for: dependency, version: version, tryCheckoutDirectory: false)
     }
-    
+
     public func prefetch(dependencies: [Dependency: VersionSpecifier], includedDependencyNames: [String]? = nil) -> SignalProducer<(), CarthageError> {
-        
+
         let lock = NSLock()
         let fetchQueue = ObservableAtomic(Set<Dependency>())
         var handledDependencies = Set<Dependency>()
         var dependenciesToFetch: [Dependency: VersionSpecifier] = dependencies.filter({ entry -> Bool in
             includedDependencyNames?.contains(entry.key.name) ?? true
         })
-        
+
         return SignalProducer<(Dependency, VersionSpecifier), CarthageError> { observer, lifetime in
                 while !lifetime.hasEnded {
                     let next = lock.locked({ () -> (Dependency, VersionSpecifier)? in
@@ -54,7 +54,7 @@ extension DependencyRetrieverProtocol {
                         }
                         return nil
                     })
-                    
+
                     if let (dependency, versionSpecifier) = next {
                         fetchQueue.modify { $0.insert(dependency) }
                         observer.send(value: (dependency, versionSpecifier))
@@ -85,7 +85,7 @@ extension DependencyRetrieverProtocol {
                     })
             }
     }
-    
+
     private func mostRelevantDependenciesFor(dependency: Dependency, versionSpecifier: VersionSpecifier) -> SignalProducer<(Dependency, VersionSpecifier), CarthageError> {
         return SignalProducer(value: (dependency, versionSpecifier))
             .flatMap(.concat) { entry -> SignalProducer<PinnedVersion, CarthageError> in
@@ -256,7 +256,7 @@ public final class ProjectDependencyRetriever: DependencyRetrieverProtocol {
             return .empty
         }
     }
-    
+
     /// Finds all the transitive dependencies for the dependencies to checkout.
     public func transitiveDependencies(
         resolvedCartfile: ResolvedCartfile,
@@ -507,7 +507,7 @@ public final class ProjectDependencyRetriever: DependencyRetrieverProtocol {
         if frameworkNames.isEmpty {
             return SignalProducer<URL, CarthageError>.empty
         }
-        
+
         var tempDir: URL?
         return FileManager.default.reactive.createTemporaryDirectory()
             .flatMap(.merge) { tempDirectoryURL -> SignalProducer<URL, CarthageError> in
@@ -611,7 +611,7 @@ public final class ProjectDependencyRetriever: DependencyRetrieverProtocol {
                                         .then(SignalProducer<(ProjectEvent?, URLLock), CarthageError>.empty)
                                 )
                             }
-                        
+
                         let fetchProducer: () -> SignalProducer<(ProjectEvent?, URLLock), CarthageError> = {
 
                             guard Git.FetchCache.needsFetch(forURL: remoteURL) else {
@@ -624,7 +624,7 @@ public final class ProjectDependencyRetriever: DependencyRetrieverProtocol {
                                         .then(SignalProducer<(ProjectEvent?, URLLock), CarthageError>.empty)
                             )
                         }
-                        
+
                         let fetchOrCloneProducer: () -> SignalProducer<(ProjectEvent?, URLLock), CarthageError> = {
                             return fetchProducer()
                                 .flatMapError { error -> SignalProducer<(ProjectEvent?, URLLock), CarthageError> in
@@ -633,7 +633,7 @@ public final class ProjectDependencyRetriever: DependencyRetrieverProtocol {
                                     return SignalProducer(value: event).concat(cloneProducer)
                             }
                         }
-                        
+
                         if isRepository {
                             if let commitish = commitish {
                                 return SignalProducer.zip(
