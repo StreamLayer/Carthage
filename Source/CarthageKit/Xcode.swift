@@ -30,6 +30,7 @@ public final class Xcode {
         version: PinnedVersion,
         rootDirectoryURL: URL,
         withOptions options: BuildOptions,
+        resolvedDependencySet: Set<PinnedDependency>,
         lockTimeout: Int? = nil,
         sdkFilter: @escaping SDKFilterCallback = { sdks, _, _, _ in .success(sdks) },
         builtProductsHandler: (([URL]) -> SignalProducer<(), CarthageError>)? = nil
@@ -41,6 +42,7 @@ public final class Xcode {
                                 withOptions: options,
                                 dependency: (dependency, version),
                                 rootDirectoryURL: rootDirectoryURL,
+                                resolvedDependencySet: resolvedDependencySet,
                                 lockTimeout: lockTimeout,
                                 sdkFilter: sdkFilter,
                                 builtProductsHandler: builtProductsHandler
@@ -66,6 +68,7 @@ public final class Xcode {
         withOptions options: BuildOptions,
         dependency: (dependency: Dependency, version: PinnedVersion)? = nil,
         rootDirectoryURL: URL,
+        resolvedDependencySet: Set<PinnedDependency>,
         lockTimeout: Int? = nil,
         customProjectName: String? = nil,
         customCommitish: String? = nil,
@@ -78,8 +81,13 @@ public final class Xcode {
         return URLLock.lockReactive(url: URL(fileURLWithPath: options.derivedDataPath), timeout: lockTimeout, recursive: true)
             .flatMap(.merge) { urlLock -> BuildSchemeProducer in
                 lock = urlLock
+                
+                let removeDerivedDataDir = SignalProducer<(), CarthageError> { () -> Result<(), CarthageError> in
+                    URL(fileURLWithPath: options.derivedDataPath).removeIgnoringErrors()
+                    return .success(())
+                }
 
-                return BuildSchemeProducer { observer, lifetime in
+                let buildSchemes = BuildSchemeProducer { observer, lifetime in
                     buildableSchemesInDirectory(directoryURL,
                                                 withConfiguration: options.configuration,
                                                 forPlatforms: options.platforms
@@ -124,6 +132,7 @@ public final class Xcode {
                                     version: dependency.version,
                                     platforms: options.platforms,
                                     configuration: options.configuration,
+                                    resolvedDependencySet: resolvedDependencySet,
                                     buildProducts: urls,
                                     rootDirectoryURL: rootDirectoryURL
                                     ).then(builtProductsHandler?(urls) ?? SignalProducer<(), CarthageError>.empty)
@@ -135,6 +144,7 @@ public final class Xcode {
                                         commitish: customCommitish,
                                         platforms: options.platforms,
                                         configuration: options.configuration,
+                                        resolvedDependencySet: resolvedDependencySet,
                                         buildProducts: urls,
                                         rootDirectoryURL: rootDirectoryURL
                                         ).then(builtProductsHandler?(urls) ?? SignalProducer<(), CarthageError>.empty)
@@ -158,6 +168,9 @@ public final class Xcode {
                             signal.observe(observer)
                         })
                 }
+                
+                return removeDerivedDataDir.then(buildSchemes)
+                
             }.on(terminated: {
                 lock?.unlock()
             })
@@ -871,8 +884,6 @@ public final class Xcode {
             .flatMap(.concat) { sdk -> SignalProducer<SDK, CarthageError> in
                 var argsForLoading = buildArgs
                 argsForLoading.sdk = sdk
-                precondition(argsForLoading.derivedDataPath != nil)
-                argsForLoading.derivedDataPath = argsForLoading.derivedDataPath!.appendingPathComponent(sdk.rawValue)
                 
                 return loadBuildSettings(with: argsForLoading)
                     .filter { settings in
@@ -918,8 +929,6 @@ public final class Xcode {
     private static func build(sdk: SDK, with buildArgs: BuildArguments, in workingDirectoryURL: URL) -> SignalProducer<TaskEvent<BuildSettings>, CarthageError> {
         var argsForLoading = buildArgs
         argsForLoading.sdk = sdk
-        precondition(argsForLoading.derivedDataPath != nil)
-        argsForLoading.derivedDataPath = argsForLoading.derivedDataPath!.appendingPathComponent(sdk.rawValue)
 
         var argsForBuilding = argsForLoading
         argsForBuilding.onlyActiveArchitecture = false
@@ -951,7 +960,7 @@ public final class Xcode {
                     .collect()
                     .flatMap(.concat) { (settings: [BuildSettings]) -> SignalProducer<TaskEvent<BuildSettings>, CarthageError> in
                         let actions: [String] = {
-                            var result: [String] = [BuildArguments.Action.clean.rawValue, xcodebuildAction.rawValue]
+                            var result: [String] = [xcodebuildAction.rawValue]
                             if xcodebuildAction == .archive {
                                 result += [
                                     // Prevent generating unnecessary empty `.xcarchive`
